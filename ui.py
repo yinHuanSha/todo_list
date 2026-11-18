@@ -199,15 +199,15 @@ class TodoApp:
         self.hero_title = label(hero, size=17, bold=True, fg=PAPER, bg=DARK)
         self.hero_title.grid(row=1, column=0, sticky="ew", pady=(3, 2))
         self.hero_reason = label(hero, fg="#d0e4dd", bg=DARK)
-        self.hero_reason.grid(row=2, column=0, sticky="w")
+        self.hero_reason.grid(row=2, column=0, sticky="ew")
         self.hero_button = ttk.Button(hero, style="Hero.TButton", command=self.hero_action)
         self.hero_button.grid(row=0, column=1, rowspan=3, sticky="e", padx=(12, 0))
-        # Prevent unusually long names from increasing the window's requested width.
-        self.hero_title.configure(width=1, justify="left")
-        self.hero_title.bind("<Configure>", self.fit_hero_title)
+        for field in (self.hero_title, self.hero_reason):
+            field.configure(width=1, justify="left")
+            field.bind("<Configure>", self.wrap_recommendation)
 
-    def fit_hero_title(self, event):
-        self.hero_title.configure(wraplength=max(1, event.width - 3))
+    def wrap_recommendation(self, event):
+        event.widget.configure(wraplength=max(1, event.width - 6))
 
     def build_list(self, parent):
         tabs = tk.Frame(parent, bg=BG)
@@ -224,26 +224,43 @@ class TodoApp:
 
         panel = tk.Frame(parent, bg=PAPER, highlightbackground=BORDER, highlightthickness=1)
         panel.pack(fill="both", expand=True)
+        panel.columnconfigure(0, weight=1)
+        panel.rowconfigure(0, weight=1)
         table_area = tk.Frame(panel, bg=PAPER)
-        table_area.pack(fill="both", expand=True)
+        table_area.grid(row=0, column=0, sticky="nsew")
         columns = ("title", "importance", "urgency", "due", "score")
         self.tree = ttk.Treeview(
             table_area, name="tasks", columns=columns, show="headings",
             selectmode="browse", height=5,
         )
-        for name, heading, width in zip(
-            columns, ("任务名称", "重要程度", "紧迫程度", "截止时间", "综合分"),
-            (260, 84, 84, 178, 68),
-        ):
+        body_font = Font(self.root, font=(FONT, 10))
+        heading_font = Font(self.root, font=(FONT, 9))
+        # Size columns in the actual display font, including the longest supported
+        # overdue duration. Windows display scaling changes glyph widths in pixels.
+        contents = (
+            ("任务名称", "任务名称", 100),
+            ("重要程度", "水水就行", 84),
+            ("紧迫程度", "迫切", 84),
+            ("截止时间", time_description(datetime.min, datetime.max), 178),
+            ("综合分", "4", 68),
+        )
+        fixed_width = 0
+        for name, (heading, sample, base_width) in zip(columns, contents):
+            width = max(base_width, heading_font.measure(heading) + 20, body_font.measure(sample) + 12)
             anchor = "w" if name == "title" else "center"
-            self.tree.column(name, width=width, minwidth=85 if name == "title" else width,
-                             stretch=name == "title", anchor=anchor)
+            self.tree.column(name, width=width, minwidth=width, stretch=name == "title", anchor=anchor)
             self.tree.heading(name, text=heading, anchor=anchor)
+            fixed_width += width
         self.tree.tag_configure("overdue", foreground=ERROR)
         scrollbar = ttk.Scrollbar(table_area, command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
         self.tree.pack(side="left", fill="both", expand=True)
+        # 48 px outer padding plus panel borders and the scrollbar.
+        min_width = max(720, fixed_width + scrollbar.winfo_reqwidth() + 54)
+        # Leave space for the list and footer below a wrapped recommendation.
+        min_height = max(530, body_font.metrics("linespace") * 25)
+        self.root.minsize(min_width, min_height)
         self.blank_hint = label(table_area, fg=MUTED, bg=PAPER)
         self.tree.bind("<<TreeviewSelect>>", lambda _: self.update_actions())
         self.tree.bind("<Double-1>", self.edit_at_pointer)
@@ -251,9 +268,9 @@ class TodoApp:
         self.tree.bind("<space>", lambda _: self.toggle_selected())
         self.tree.bind("<Delete>", lambda _: self.delete_selected())
 
-        tk.Frame(panel, bg=BORDER, height=1).pack(fill="x")
+        tk.Frame(panel, bg=BORDER, height=1).grid(row=1, column=0, sticky="ew")
         foot = tk.Frame(panel, bg=PAPER, padx=9, pady=6)
-        foot.pack(fill="x")
+        foot.grid(row=2, column=0, sticky="ew")
         self.state_button = ttk.Button(foot, style="Quiet.TButton", command=self.toggle_selected)
         self.state_button.pack(side="left")
         self.edit_button = ttk.Button(
