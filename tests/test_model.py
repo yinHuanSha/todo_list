@@ -70,7 +70,19 @@ class PriorityTests(unittest.TestCase):
     def test_readable_time_in_recommendation(self):
         self.assertEqual(time_description(None, self.now), "未设截止时间")
         self.assertEqual(time_description(self.now, self.now), "现在到期")
-        self.assertEqual(time_description(self.deadline(48), self.now), "距截止还有 48 小时")
+        self.assertEqual(time_description(self.deadline(48), self.now), "距截止还有 2 天")
         self.assertEqual(time_description(self.deadline(-1.5), self.now), "已逾期 1 小时 30 分钟")
         self.assertEqual(time_description(self.now - timedelta(seconds=1), self.now),
                          "已逾期 不到 1 分钟")
+
+    def test_day_hour_minute_countdown(self):
+        cases = [
+            (timedelta(hours=23, minutes=59), "23 小时 59 分钟"),
+            (timedelta(hours=24), "1 天"),
+            (timedelta(days=1, minutes=1), "1 天 1 分钟"),
+            (timedelta(hours=126, minutes=13), "5 天 6 小时 13 分钟"),
+        ]
+        for delta, expected in cases:
+            with self.subTest(delta=delta):
+                self.assertEqual(time_description(self.now + delta, self.now), f"距截止还有 {expected}")
+                self.assertEqual(time_description(self.now - delta, self.now), f"已逾期 {expected}")

@@ -72,7 +72,10 @@ def time_description(due_at: datetime | None, now: datetime) -> str:
         duration = "不到 1 分钟"
     else:
         hours, minutes = divmod(minutes, 60)
+        days, hours = divmod(hours, 24)
         parts = []
+        if days:
+            parts.append(f"{days} 天")
         if hours:
             parts.append(f"{hours} 小时")
         if minutes:
