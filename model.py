@@ -53,6 +53,7 @@ def rank_tasks(tasks: Iterable[Task], now: datetime) -> list[Task]:
     def sort_key(task: Task):
         return (
             -score(task, now),
+            -task.importance,
             task.due_at is None,
             task.due_at or datetime.max,
             task.id,

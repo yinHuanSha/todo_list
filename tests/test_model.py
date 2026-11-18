@@ -34,18 +34,19 @@ class PriorityTests(unittest.TestCase):
             with self.subTest(due=due):
                 self.assertEqual(urgency(due, self.now), expected)
 
-    def test_report_and_registration_example(self):
-        form = Task(1, "登记表", 0, self.deadline(6))
-        report = Task(2, "重要报告", 2, self.deadline(48))
-        next_week = Task(2, "重要报告", 2, self.deadline(168))
-        self.assertEqual(rank_tasks([form, report], self.now), [report, form])
-        self.assertEqual(rank_tasks([next_week, form], self.now), [form, next_week])
+    def test_equal_scores_favor_importance_over_nearer_deadlines(self):
+        meeting = Task(1, "座谈会", 0, self.deadline(15))
+        prep = Task(2, "组会准备", 1, self.deadline(48))
+        report = Task(3, "提交开题报告", 2, self.deadline(126))
+        tasks = [meeting, prep, report]
+        self.assertEqual([score(task, self.now) for task in tasks], [2, 2, 2])
+        self.assertEqual(rank_tasks(tasks, self.now), [report, prep, meeting])
 
-    def test_equal_scores_use_deadline_then_insertion_id(self):
+    def test_equal_scores_and_importance_use_deadline_then_insertion_id(self):
         no_date = Task(1, "无截止", 2, None)
-        later = Task(2, "稍后截止", 1, self.deadline(36))
-        first = Task(3, "先添加", 0, self.deadline(4))
-        second = Task(4, "后添加", 0, first.due_at)
+        later = Task(2, "稍后截止", 2, self.deadline(100))
+        first = Task(3, "先添加", 2, self.deadline(90))
+        second = Task(4, "后添加", 2, first.due_at)
         self.assertEqual(rank_tasks([second, later, no_date, first], self.now),
                          [first, second, later, no_date])
 
@@ -57,8 +58,11 @@ class PriorityTests(unittest.TestCase):
     def test_advancing_clock_changes_first_task(self):
         ongoing = Task(1, "长期任务", 2, None)
         upcoming = Task(2, "提交作业", 1, self.deadline(73))
-        self.assertEqual(rank_tasks([ongoing, upcoming], self.now)[0], ongoing)
-        self.assertEqual(rank_tasks([ongoing, upcoming], self.deadline(1))[0], upcoming)
+        for elapsed, points, recommended in [(0, 1, ongoing), (1, 2, ongoing), (49, 3, upcoming)]:
+            with self.subTest(elapsed=elapsed):
+                now = self.deadline(elapsed)
+                self.assertEqual(score(upcoming, now), points)
+                self.assertEqual(rank_tasks([ongoing, upcoming], now)[0], recommended)
 
     def test_empty_and_completed_tasks(self):
         pending = Task(1, "还要做", 0, None)
