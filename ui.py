@@ -2,10 +2,11 @@
 
 import sqlite3
 import tkinter as tk
-from datetime import datetime
+from datetime import date, datetime
 from tkinter import messagebox, ttk
 from tkinter.font import Font
 
+from date_picker import DatePicker
 from model import (
     IMPORTANCE_LABELS,
     URGENCY_LABELS,
@@ -30,6 +31,33 @@ ERROR = "#a03936"
 FONT = "Microsoft YaHei UI"
 STORAGE_ERRORS = (sqlite3.Error, OSError, KeyError, ValueError)
 DATE_FORMAT = "%Y-%m-%d %H:%M"
+DEFAULT_DUE_TIME = "23:59"
+
+
+def deadline_parts(text: str) -> list[str]:
+    return text.strip().replace("：", ":").split(maxsplit=1)
+
+
+def parse_deadline(text: str) -> datetime | None:
+    parts = deadline_parts(text)
+    if not parts:
+        return None
+    if len(parts) == 1:
+        parts.append(DEFAULT_DUE_TIME)
+    return datetime.strptime(" ".join(parts), DATE_FORMAT)
+
+
+def calendar_fields(text: str, today: date) -> tuple[date, str]:
+    parts = deadline_parts(text)
+    if not parts:
+        return today, DEFAULT_DUE_TIME
+    if len(parts) == 1 and ":" in parts[0]:
+        return today, parts[0]
+    try:
+        initial = datetime.strptime(parts[0], "%Y-%m-%d").date()
+    except ValueError:
+        initial = today
+    return initial, parts[1] if len(parts) == 2 else DEFAULT_DUE_TIME
 
 
 def set_styles(root):
@@ -101,11 +129,18 @@ class TaskDialog(tk.Toplevel):
         self.importance.pack(fill="x")
         label(body, "截止时间（选填）", bg=PAPER).pack(anchor="w", pady=(12, 4))
         self.due_var = tk.StringVar(
-            value=task.due_at.strftime(DATE_FORMAT) if task and task.due_at else ""
+            value=task.due_at.isoformat(" ", timespec="minutes") if task and task.due_at else ""
         )
-        self.due_entry = ttk.Entry(body, textvariable=self.due_var)
-        self.due_entry.pack(fill="x")
-        label(body, "按本地时间填写，例如 2026-11-20 18:30", size=9, fg=MUTED,
+        due_row = tk.Frame(body, bg=PAPER)
+        due_row.pack(fill="x")
+        self.due_entry = ttk.Entry(due_row, textvariable=self.due_var)
+        self.due_entry.pack(side="left", fill="x", expand=True)
+        self.calendar = None
+        calendar_button = ttk.Button(due_row, text="选日期", style="Quiet.TButton",
+                                     command=self.open_calendar)
+        calendar_button.pack(side="left", padx=(6, 0))
+        calendar_button.bind("<Return>", lambda _: self.open_calendar())
+        label(body, "例如 2026-11-23 18：30，只选日期默认 23:59", size=9, fg=MUTED,
               bg=PAPER).pack(anchor="w", pady=(4, 0))
         self.feedback = label(body, size=9, fg=ERROR, bg=PAPER, wraplength=370)
         self.feedback.pack(fill="x", pady=(3, 4))
@@ -128,15 +163,27 @@ class TaskDialog(tk.Toplevel):
         self.name_entry.focus_set()
         self.name_entry.selection_range(0, "end")
 
+    def open_calendar(self):
+        if self.calendar is not None and self.calendar.winfo_exists():
+            self.calendar.lift()
+            return "break"
+        initial, clock = calendar_fields(self.due_var.get(), date.today())
+
+        def choose(day):
+            self.due_var.set(f"{day.isoformat()} {clock}")
+            self.feedback.configure(text="")
+
+        self.calendar = DatePicker(self, initial, choose)
+        return "break"
+
     def save(self):
         title = self.name_var.get().strip()
         if not title:
             self.feedback.configure(text="请填写任务名称。")
             self.name_entry.focus_set()
             return "break"
-        raw_date = self.due_var.get().strip()
         try:
-            due_at = datetime.strptime(raw_date, DATE_FORMAT) if raw_date else None
+            due_at = parse_deadline(self.due_var.get())
         except ValueError:
             self.feedback.configure(text="请填写有效的日期和时间，例如 2026-11-20 18:30。")
             self.due_entry.focus_set()
@@ -318,7 +365,7 @@ class TodoApp:
         rows = []
         for task in (completed if self.show_done else pending):
             expired = not task.done and task.due_at is not None and task.due_at < now
-            due_text = task.due_at.strftime(DATE_FORMAT) if task.due_at else "—"
+            due_text = task.due_at.isoformat(" ", timespec="minutes") if task.due_at else "—"
             if expired:
                 due_text += "\n" + time_description(task.due_at, now)
             urgency_text = URGENCY_LABELS[urgency(task.due_at, now)]
