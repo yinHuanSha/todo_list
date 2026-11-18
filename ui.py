@@ -289,7 +289,7 @@ class TodoApp:
             ("重要程度", "水水就行", 84),
             ("紧迫程度", "迫切", 84),
             ("截止时间", time_description(datetime.min, datetime.max), 178),
-            ("综合分", "4", 68),
+            ("优先分", "10/10", 68),
         )
         fixed_width = 0
         for name, (heading, sample, base_width) in zip(columns, contents):
@@ -370,7 +370,7 @@ class TodoApp:
                 due_text += "\n" + time_description(task.due_at, now)
             urgency_text = URGENCY_LABELS[urgency(task.due_at, now)]
             rows.append((str(task.id), (task.title, IMPORTANCE_LABELS[task.importance],
-                         urgency_text, due_text, score(task, now)), expired))
+                         urgency_text, due_text, f"{score(task, now)}/10"), expired))
         self.display_rows(rows)
         self.update_actions()
 
@@ -385,7 +385,7 @@ class TodoApp:
         self.hero_title.configure(text=title)
         self.hero_reason.configure(
             text=f"{IMPORTANCE_LABELS[task.importance]}  ·  {time_description(task.due_at, now)}"
-                 f"  ·  综合 {score(task, now)} 分"
+                 f"  ·  优先分 {score(task, now)}/10"
         )
         self.hero_reason.grid()
         self.hero_button.configure(text="标记完成")

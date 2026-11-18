@@ -46,14 +46,14 @@ def urgency(due_at: datetime | None, now: datetime) -> int:
 
 
 def score(task: Task, now: datetime) -> int:
-    return task.importance + urgency(task.due_at, now)
+    # 重要程度每档 3 分，紧迫程度每档 2 分，九种组合各有一个分数。
+    return 3 * task.importance + 2 * urgency(task.due_at, now)
 
 
 def rank_tasks(tasks: Iterable[Task], now: datetime) -> list[Task]:
     def sort_key(task: Task):
         return (
             -score(task, now),
-            -task.importance,
             task.due_at is None,
             task.due_at or datetime.max,
             task.id,

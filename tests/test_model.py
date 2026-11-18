@@ -1,6 +1,5 @@
 import unittest
 from datetime import datetime, timedelta
-from itertools import product
 
 from model import Task, rank_tasks, score, time_description, urgency
 
@@ -12,10 +11,17 @@ class PriorityTests(unittest.TestCase):
         return self.now + timedelta(hours=hours)
 
     def test_all_nine_combinations(self):
-        for importance, (hours, urgency_points) in product(range(3), [(6, 2), (48, 1), (96, 0)]):
-            with self.subTest(importance=importance, hours=hours):
-                task = Task(1, "任务", importance, self.deadline(hours))
-                self.assertEqual(score(task, self.now), importance + urgency_points)
+        tasks = []
+        expected_scores = ((0, 2, 4), (3, 5, 7), (6, 8, 10))
+        for importance, row in enumerate(expected_scores):
+            for hours, points in zip((96, 48, 6), row, strict=True):
+                with self.subTest(importance=importance, hours=hours):
+                    task = Task(len(tasks) + 1, "任务", importance, self.deadline(hours))
+                    tasks.append(task)
+                    self.assertEqual(score(task, self.now), points)
+        previous_order = sorted(tasks, key=lambda t: (t.importance + urgency(t.due_at, self.now),
+                                                       t.importance), reverse=True)
+        self.assertEqual(rank_tasks(tasks, self.now), previous_order)
 
     def test_time_boundaries(self):
         tick = timedelta(microseconds=1)
@@ -34,12 +40,12 @@ class PriorityTests(unittest.TestCase):
             with self.subTest(due=due):
                 self.assertEqual(urgency(due, self.now), expected)
 
-    def test_equal_scores_favor_importance_over_nearer_deadlines(self):
+    def test_scores_show_the_priority_of_previously_tied_tasks(self):
         meeting = Task(1, "座谈会", 0, self.deadline(15))
         prep = Task(2, "组会准备", 1, self.deadline(48))
         report = Task(3, "提交开题报告", 2, self.deadline(126))
         tasks = [meeting, prep, report]
-        self.assertEqual([score(task, self.now) for task in tasks], [2, 2, 2])
+        self.assertEqual([score(task, self.now) for task in tasks], [4, 5, 6])
         self.assertEqual(rank_tasks(tasks, self.now), [report, prep, meeting])
 
     def test_equal_scores_and_importance_use_deadline_then_insertion_id(self):
@@ -58,7 +64,7 @@ class PriorityTests(unittest.TestCase):
     def test_advancing_clock_changes_first_task(self):
         ongoing = Task(1, "长期任务", 2, None)
         upcoming = Task(2, "提交作业", 1, self.deadline(73))
-        for elapsed, points, recommended in [(0, 1, ongoing), (1, 2, ongoing), (49, 3, upcoming)]:
+        for elapsed, points, recommended in [(0, 3, ongoing), (1, 5, ongoing), (49, 7, upcoming)]:
             with self.subTest(elapsed=elapsed):
                 now = self.deadline(elapsed)
                 self.assertEqual(score(upcoming, now), points)
