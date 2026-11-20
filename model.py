@@ -18,6 +18,7 @@ class Task:
     importance: int
     due_at: datetime | None
     done: bool = False
+    parent_id: int | None = None
 
 
 def normalize_fields(
@@ -51,6 +52,10 @@ def score(task: Task, now: datetime) -> int:
 
 
 def rank_tasks(tasks: Iterable[Task], now: datetime) -> list[Task]:
+    """把未完成的子事项和独立任务一起排序。分组本身不重复参与推荐。"""
+    items = list(tasks)
+    group_ids = {task.parent_id for task in items if task.parent_id is not None}
+
     def sort_key(task: Task):
         return (
             -score(task, now),
@@ -59,7 +64,8 @@ def rank_tasks(tasks: Iterable[Task], now: datetime) -> list[Task]:
             task.id,
         )
 
-    return sorted((task for task in tasks if not task.done), key=sort_key)
+    return sorted((task for task in items if not task.done and task.id not in group_ids),
+                  key=sort_key)
 
 
 def time_description(due_at: datetime | None, now: datetime) -> str:

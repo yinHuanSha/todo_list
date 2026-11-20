@@ -77,6 +77,22 @@ class PriorityTests(unittest.TestCase):
         self.assertEqual(rank_tasks([done], self.now), [])
         self.assertEqual(rank_tasks([done, pending], self.now), [pending])
 
+    def test_rank_subtasks_alongside_standalone_tasks(self):
+        group = Task(1, "提交开题材料", 2, self.deadline(96))
+        report = Task(2, "报告正文", 2, group.due_at, parent_id=group.id)
+        cover = Task(3, "封面", 0, group.due_at, parent_id=group.id)
+        seminar = Task(4, "准备组会", 1, self.deadline(36))
+        tasks = [group, cover, seminar, report]
+        self.assertEqual(rank_tasks(iter(tasks), self.now), [report, seminar, cover])
+        finished_report = Task(report.id, report.title, 2, group.due_at, True, group.id)
+        self.assertEqual(rank_tasks([group, finished_report, cover, seminar], self.now),
+                         [seminar, cover])
+
+    def test_completed_children_do_not_turn_group_into_a_recommendation(self):
+        group = Task(1, "材料", 2, self.now)
+        submitted = Task(2, "附件", 0, group.due_at, True, group.id)
+        self.assertEqual(rank_tasks([group, submitted], self.now), [])
+
     def test_readable_time_in_recommendation(self):
         self.assertEqual(time_description(None, self.now), "未设截止时间")
         self.assertEqual(time_description(self.now, self.now), "现在到期")

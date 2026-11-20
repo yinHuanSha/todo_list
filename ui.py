@@ -107,19 +107,41 @@ def label(parent, text="", *, size=10, bold=False, fg=INK, bg=BG, **kwargs):
     )
 
 
+def checkbox_images(root, size):
+    """Create the two clickable tree icons at the display's text scale."""
+    images = {}
+    for checked in (False, True):
+        image = tk.PhotoImage(master=root, width=size + 5, height=size)
+        image.put(GREEN if checked else MUTED, to=(1, 1, size-1, size-1))
+        if checked:
+            # Draw two strokes as a check at the same resolution as the box.
+            for x in range(size // 5, size * 4 // 5):
+                y = int(size * .70 - abs(x - size * .42))
+                image.put(PAPER, to=(x, y, x + 1, y + max(2, size // 8)))
+        else:
+            image.put(PAPER, to=(3, 3, size-3, size-3))
+        images[checked] = image
+    return images
+
+
 class TaskDialog(tk.Toplevel):
-    def __init__(self, root, task, on_save):
+    def __init__(self, root, task, on_save, parent_task=None):
         super().__init__(root)
         self.withdraw()
         self.on_save = on_save
-        self.title("编辑任务" if task else "添加任务")
+        self.parent_task = parent_task
+        kind = "子事项" if parent_task else "任务"
+        self.title(("编辑" if task else "添加") + kind)
         self.transient(root)
         self.resizable(False, False)
         self.configure(bg=PAPER)
         body = tk.Frame(self, bg=PAPER, padx=24, pady=20)
         body.pack(fill="both", expand=True)
         label(body, self.title(), size=17, bold=True, bg=PAPER).pack(anchor="w")
-        label(body, "任务名称", bg=PAPER).pack(anchor="w", pady=(16, 4))
+        if parent_task:
+            label(body, f"所属任务：{parent_task.title}", fg=MUTED, bg=PAPER,
+                  wraplength=350, justify="left").pack(anchor="w", pady=(5, 0))
+        label(body, kind + "名称", bg=PAPER).pack(anchor="w", pady=(16, 4))
         self.name_var = tk.StringVar(value=task.title if task else "")
         self.name_entry = ttk.Entry(body, width=38, textvariable=self.name_var)
         self.name_entry.pack(fill="x")
@@ -127,21 +149,13 @@ class TaskDialog(tk.Toplevel):
         self.importance = ttk.Combobox(body, values=IMPORTANCE_LABELS, state="readonly")
         self.importance.current(task.importance if task else 1)
         self.importance.pack(fill="x")
-        label(body, "截止时间（选填）", bg=PAPER).pack(anchor="w", pady=(12, 4))
-        self.due_var = tk.StringVar(
-            value=task.due_at.isoformat(" ", timespec="minutes") if task and task.due_at else ""
-        )
-        due_row = tk.Frame(body, bg=PAPER)
-        due_row.pack(fill="x")
-        self.due_entry = ttk.Entry(due_row, textvariable=self.due_var)
-        self.due_entry.pack(side="left", fill="x", expand=True)
-        self.calendar = None
-        calendar_button = ttk.Button(due_row, text="选日期", style="Quiet.TButton",
-                                     command=self.open_calendar)
-        calendar_button.pack(side="left", padx=(6, 0))
-        calendar_button.bind("<Return>", lambda _: self.open_calendar())
-        label(body, "例如 2026-11-23 18：30，只选日期默认 23:59", size=9, fg=MUTED,
-              bg=PAPER).pack(anchor="w", pady=(4, 0))
+        if parent_task:
+            deadline = parent_task.due_at
+            deadline_text = deadline.isoformat(" ", timespec="minutes") if deadline else "未设截止时间"
+            label(body, "截止时间（随所属任务）", bg=PAPER).pack(anchor="w", pady=(12, 4))
+            label(body, deadline_text, fg=MUTED, bg=PAPER).pack(anchor="w")
+        else:
+            self.build_deadline_field(body, task)
         self.feedback = label(body, size=9, fg=ERROR, bg=PAPER, wraplength=370)
         self.feedback.pack(fill="x", pady=(3, 4))
         actions = tk.Frame(body, bg=PAPER)
@@ -163,6 +177,23 @@ class TaskDialog(tk.Toplevel):
         self.name_entry.focus_set()
         self.name_entry.selection_range(0, "end")
 
+    def build_deadline_field(self, body, task):
+        label(body, "截止时间（选填）", bg=PAPER).pack(anchor="w", pady=(12, 4))
+        self.due_var = tk.StringVar(
+            value=task.due_at.isoformat(" ", timespec="minutes") if task and task.due_at else ""
+        )
+        due_row = tk.Frame(body, bg=PAPER)
+        due_row.pack(fill="x")
+        self.due_entry = ttk.Entry(due_row, textvariable=self.due_var)
+        self.due_entry.pack(side="left", fill="x", expand=True)
+        self.calendar = None
+        calendar_button = ttk.Button(due_row, text="选日期", style="Quiet.TButton",
+                                     command=self.open_calendar)
+        calendar_button.pack(side="left", padx=(6, 0))
+        calendar_button.bind("<Return>", lambda _: self.open_calendar())
+        label(body, "例如 2026-11-23 18：30，只选日期默认 23:59", size=9, fg=MUTED,
+              bg=PAPER).pack(anchor="w", pady=(4, 0))
+
     def open_calendar(self):
         if self.calendar is not None and self.calendar.winfo_exists():
             self.calendar.lift()
@@ -182,12 +213,14 @@ class TaskDialog(tk.Toplevel):
             self.feedback.configure(text="请填写任务名称。")
             self.name_entry.focus_set()
             return "break"
-        try:
-            due_at = parse_deadline(self.due_var.get())
-        except ValueError:
-            self.feedback.configure(text="请填写有效的日期和时间，例如 2026-11-20 18:30。")
-            self.due_entry.focus_set()
-            return "break"
+        due_at = None
+        if self.parent_task is None:
+            try:
+                due_at = parse_deadline(self.due_var.get())
+            except ValueError:
+                self.feedback.configure(text="请填写有效的日期和时间，例如 2026-11-20 18:30。")
+                self.due_entry.focus_set()
+                return "break"
         try:
             self.on_save(title, self.importance.current(), due_at)
         except STORAGE_ERRORS as exc:
@@ -206,6 +239,9 @@ class TodoApp:
         self.focus_refresh = None
         self.best = None
         self.tasks_by_id = {}
+        self.children = {}
+        self.expanded = {}
+        self.reveal_group = None
         self.last_rows = None
         self.last_selected = {False: None, True: None}
         root.title("待办清单")
@@ -221,6 +257,7 @@ class TodoApp:
         self.refresh()
         self.tree.focus_set()
         root.bind("<Control-n>", lambda _: self.open_form())
+        root.bind("<Control-Shift-N>", lambda _: self.add_child())
         root.bind("<Control-Tab>", lambda _: self.switch_list(not self.show_done))
         root.bind("<FocusIn>", self.queue_refresh, add="+")
         root.after(60_000, self.minute_tick)
@@ -275,9 +312,9 @@ class TodoApp:
         panel.rowconfigure(0, weight=1)
         table_area = tk.Frame(panel, bg=PAPER)
         table_area.grid(row=0, column=0, sticky="nsew")
-        columns = ("title", "importance", "urgency", "due", "score")
+        columns = ("importance", "urgency", "due", "score")
         self.tree = ttk.Treeview(
-            table_area, name="tasks", columns=columns, show="headings",
+            table_area, name="tasks", columns=columns, show="tree headings",
             selectmode="browse", height=5,
         )
         body_font = Font(self.root, font=(FONT, 10))
@@ -285,20 +322,23 @@ class TodoApp:
         # Size columns in the actual display font, including the longest supported
         # overdue duration. Windows display scaling changes glyph widths in pixels.
         contents = (
-            ("任务名称", "任务名称", 100),
+            ("任务名称", "任务名称", 160),
             ("重要程度", "水水就行", 84),
             ("紧迫程度", "迫切", 84),
             ("截止时间", time_description(datetime.min, datetime.max), 178),
             ("优先分", "10/10", 68),
         )
         fixed_width = 0
-        for name, (heading, sample, base_width) in zip(columns, contents):
+        for name, (heading, sample, base_width) in zip(("#0", *columns), contents):
             width = max(base_width, heading_font.measure(heading) + 20, body_font.measure(sample) + 12)
-            anchor = "w" if name == "title" else "center"
-            self.tree.column(name, width=width, minwidth=width, stretch=name == "title", anchor=anchor)
+            anchor = "w" if name == "#0" else "center"
+            self.tree.column(name, width=width, minwidth=width, stretch=name == "#0", anchor=anchor)
             self.tree.heading(name, text=heading, anchor=anchor)
             fixed_width += width
         self.tree.tag_configure("overdue", foreground=ERROR)
+        self.tree.tag_configure("group", foreground=DARK, font=(FONT, 10, "bold"))
+        self.tree.tag_configure("finished", foreground=MUTED)
+        self.checkboxes = checkbox_images(self.root, max(15, body_font.metrics("linespace") - 2))
         scrollbar = ttk.Scrollbar(table_area, command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
@@ -310,6 +350,9 @@ class TodoApp:
         self.root.minsize(min_width, min_height)
         self.blank_hint = label(table_area, fg=MUTED, bg=PAPER)
         self.tree.bind("<<TreeviewSelect>>", lambda _: self.update_actions())
+        for event in ("<<TreeviewOpen>>", "<<TreeviewClose>>"):
+            self.tree.bind(event, lambda _: self.root.after_idle(self.update_actions))
+        self.tree.bind("<Button-1>", self.click_checkbox)
         self.tree.bind("<Double-1>", self.edit_at_pointer)
         self.tree.bind("<Return>", lambda _: self.edit_selected())
         self.tree.bind("<space>", lambda _: self.toggle_selected())
@@ -318,14 +361,18 @@ class TodoApp:
         tk.Frame(panel, bg=BORDER, height=1).grid(row=1, column=0, sticky="ew")
         foot = tk.Frame(panel, bg=PAPER, padx=9, pady=6)
         foot.grid(row=2, column=0, sticky="ew")
-        self.state_button = ttk.Button(foot, style="Quiet.TButton", command=self.toggle_selected)
+        self.state_button = ttk.Button(foot, width=9, style="Quiet.TButton", command=self.toggle_selected)
         self.state_button.pack(side="left")
         self.edit_button = ttk.Button(
-            foot, text="编辑", style="Quiet.TButton", command=self.edit_selected
+            foot, text="编辑", width=4, style="Quiet.TButton", command=self.edit_selected
         )
         self.edit_button.pack(side="left", padx=5)
+        self.subtask_button = ttk.Button(
+            foot, name="add_child", text="添加子事项", width=9, style="Quiet.TButton", command=self.add_child
+        )
+        self.subtask_button.pack(side="left")
         self.delete_button = ttk.Button(
-            foot, text="删除", style="Danger.TButton", command=self.delete_selected
+            foot, text="删除", width=4, style="Danger.TButton", command=self.delete_selected
         )
         self.delete_button.pack(side="right")
         self.error_hint = label(parent, size=9, fg=ERROR, wraplength=620)
@@ -352,27 +399,56 @@ class TodoApp:
         self.error_hint.pack_forget()
         now = datetime.now()
         pending = rank_tasks(tasks, now)
-        completed = sorted((task for task in tasks if task.done), key=lambda t: -t.id)
         self.tasks_by_id = {task.id: task for task in tasks}
+        self.children = {}
+        for task in tasks:
+            if task.parent_id is not None:
+                self.children.setdefault(task.parent_id, []).append(task)
+        # A group takes the place of its highest-ranked actionable child.
+        pending_roots = list(dict.fromkeys(
+            task.parent_id if task.parent_id is not None else task.id for task in pending
+        ))
+        done_roots = sorted(
+            (task.id for task in tasks if task.parent_id is None and task.done), reverse=True
+        )
         self.best = pending[0] if pending else None
         self.update_recommendation(now)
-        for done, caption, count in ((False, "待办", len(pending)), (True, "已完成", len(completed))):
+        for done, caption, count in ((False, "待办", len(pending_roots)), (True, "已完成", len(done_roots))):
             active = done == self.show_done
             self.tab_buttons[done].configure(
                 text=f"{caption}  {count}", bg=PALE if active else BG,
                 fg=DARK if active else MUTED, relief="flat",
             )
         rows = []
-        for task in (completed if self.show_done else pending):
-            expired = not task.done and task.due_at is not None and task.due_at < now
-            due_text = task.due_at.isoformat(" ", timespec="minutes") if task.due_at else "—"
-            if expired:
-                due_text += "\n" + time_description(task.due_at, now)
-            urgency_text = URGENCY_LABELS[urgency(task.due_at, now)]
-            rows.append((str(task.id), (task.title, IMPORTANCE_LABELS[task.importance],
-                         urgency_text, due_text, f"{score(task, now)}/10"), expired))
+        positions = {task.id: index for index, task in enumerate(pending)}
+        for root_id in (done_roots if self.show_done else pending_roots):
+            rows.append(self.make_row(self.tasks_by_id[root_id], now))
+            children = sorted(self.children.get(root_id, ()),
+                              key=lambda child: (child.done, positions.get(child.id, child.id)))
+            rows.extend(self.make_row(child, now) for child in children)
         self.display_rows(rows)
         self.update_actions()
+
+    def make_row(self, task, now):
+        children = self.children.get(task.id)
+        title = task.title
+        due = task.due_at.isoformat(" ", timespec="minutes") if task.due_at else "—"
+        urgent = URGENCY_LABELS[urgency(task.due_at, now)]
+        points = f"{score(task, now)}/10" if not task.done and not children else "—"
+        tag = ""
+        if children:
+            title += f"\n已完成 {sum(child.done for child in children)}/{len(children)}"
+            tag = "group"
+        if task.done:
+            urgent = "已完成"
+            if not children:
+                tag = "finished"
+        elif task.due_at and task.due_at < now:
+            due += "\n" + time_description(task.due_at, now)
+            if not children:
+                tag = "overdue"
+        importance = "—" if children else IMPORTANCE_LABELS[task.importance]
+        return task, title, (importance, urgent, due, points), tag
 
     def update_recommendation(self, now):
         if self.best is None:
@@ -383,8 +459,14 @@ class TodoApp:
         task = self.best
         title = task.title if len(task.title) <= 60 else task.title[:59] + "…"
         self.hero_title.configure(text=title)
+        context = ""
+        if task.parent_id is not None:
+            parent_title = self.tasks_by_id[task.parent_id].title
+            if len(parent_title) > 30:
+                parent_title = parent_title[:29] + "…"
+            context = f"所属任务：{parent_title}  ·  "
         self.hero_reason.configure(
-            text=f"{IMPORTANCE_LABELS[task.importance]}  ·  {time_description(task.due_at, now)}"
+            text=f"{context}{IMPORTANCE_LABELS[task.importance]}  ·  {time_description(task.due_at, now)}"
                  f"  ·  优先分 {score(task, now)}/10"
         )
         self.hero_reason.grid()
@@ -392,21 +474,36 @@ class TodoApp:
 
     def display_rows(self, rows):
         state = (self.show_done, rows)
-        if state == self.last_rows:
+        if state == self.last_rows and self.reveal_group is None:
             return
         self.last_rows = state
-        columns = ("title", "importance", "due") if self.show_done else "#all"
+        columns = ("importance", "due") if self.show_done else "#all"
         self.tree.configure(displaycolumns=columns)
         old_ids = self.tree.get_children()
+        for iid in old_ids:
+            if self.tree.get_children(iid):
+                self.expanded[int(iid)] = bool(self.tree.item(iid, "open"))
+        if self.reveal_group is not None:
+            self.expanded[self.reveal_group] = True
+            self.reveal_group = None
         if old_ids:
             self.tree.delete(*old_ids)
-        for iid, values, expired in rows:
-            self.tree.insert("", "end", iid=iid, values=values, tags=("overdue",) if expired else ())
+        for task, title, values, tag in rows:
+            is_child = task.parent_id is not None
+            self.tree.insert(
+                str(task.parent_id) if is_child else "", "end", iid=str(task.id),
+                text=title, values=values, tags=(tag,) if tag else (),
+                image=self.checkboxes[task.done] if is_child else "",
+                open=self.expanded.get(task.id, False),
+            )
         if rows:
             self.blank_hint.place_forget()
             iid = self.last_selected[self.show_done]
             if not iid or not self.tree.exists(iid):
-                iid = rows[0][0]
+                iid = str(rows[0][0].id)
+            parent = self.tree.parent(iid)
+            if parent and not self.tree.item(parent, "open"):
+                iid = parent
             self.tree.focus(iid)
             self.tree.selection_set(iid)
             self.tree.see(iid)
@@ -425,8 +522,13 @@ class TodoApp:
         if task is not None:
             self.last_selected[self.show_done] = str(task.id)
         state = "normal" if task else "disabled"
-        self.state_button.configure(text="恢复待办" if self.show_done else "标记完成", state=state)
+        if task and task.id in self.children:
+            action = "收起子事项" if self.tree.item(str(task.id), "open") else "展开子事项"
+        else:
+            action = "恢复待办" if task and task.done else "标记完成"
+        self.state_button.configure(text=action, state=state)
         self.edit_button.configure(state=state)
+        self.subtask_button.configure(state="normal" if task and task.parent_id is None else "disabled")
         self.delete_button.configure(state=state)
 
     def switch_list(self, done):
@@ -441,38 +543,70 @@ class TodoApp:
         else:
             self.open_form()
 
-    def open_form(self, task: Task | None = None):
+    def add_child(self):
+        parent = self.selected_task()
+        if parent is not None and parent.parent_id is None:
+            self.open_form(parent_task=parent)
+        return "break"
+
+    def open_form(self, task: Task | None = None, parent_task: Task | None = None):
         if self.dialog is not None and self.dialog.winfo_exists():
             self.dialog.lift()
             return "break"
 
         def save(title, importance, due_at):
-            if task is None:
+            if parent_task and task is None:
+                self.store.add_subtask(parent_task.id, title, importance)
+                self.show_done = False
+                self.last_selected[False] = str(parent_task.id)
+                self.reveal_group = parent_task.id
+            elif parent_task:
+                self.store.update_subtask(task.id, title, importance)
+            elif task is None:
                 self.store.add_task(title, importance, due_at)
                 self.show_done = False
             else:
                 self.store.update_task(task.id, title, importance, due_at)
             self.refresh()
 
-        self.dialog = TaskDialog(self.root, task, save)
+        self.dialog = TaskDialog(self.root, task, save, parent_task)
         return "break"
 
     def edit_selected(self):
         task = self.selected_task()
         if task:
-            self.open_form(task)
+            self.open_form(task, self.tasks_by_id.get(task.parent_id))
         return "break"
 
     def edit_at_pointer(self, event):
         iid = self.tree.identify_row(event.y)
         if iid:
+            element = self.tree.identify_element(event.x, event.y)
+            if element.endswith(("image", "indicator")):
+                return "break"
             self.tree.selection_set(iid)
             self.edit_selected()
             return "break"
 
+    def click_checkbox(self, event):
+        iid = self.tree.identify_row(event.y)
+        if iid and self.tree.identify_element(event.x, event.y).endswith("image"):
+            task = self.tasks_by_id[int(iid)]
+            if task.parent_id is not None:
+                self.tree.focus_set()
+                self.tree.focus(iid)
+                self.tree.selection_set(iid)
+                self.last_selected[self.show_done] = iid
+                self.change_done(task)
+                return "break"
+
     def toggle_selected(self):
         task = self.selected_task()
-        if task:
+        if task and task.id in self.children:
+            iid = str(task.id)
+            self.tree.item(iid, open=not self.tree.item(iid, "open"))
+            self.update_actions()
+        elif task:
             self.change_done(task)
         return "break"
 
@@ -485,9 +619,21 @@ class TodoApp:
 
     def delete_selected(self):
         task = self.selected_task()
-        if task and messagebox.askyesno(
-            "删除任务", f"确定永久删除“{task.title}”吗？", parent=self.root, default="no"
-        ):
+        if task is None:
+            return "break"
+        kind = "子事项" if task.parent_id is not None else "任务"
+        children = self.children.get(task.id, ())
+        count = len(children)
+        targets = f"“{task.title}”及其全部 {count} 个子事项" if count else f"“{task.title}”"
+        prompt = f"确定永久删除{targets}吗？"
+        if children:
+            names = [child.title if len(child.title) <= 40 else child.title[:39] + "…"
+                     for child in children[:5]]
+            prompt += "\n\n" + "\n".join("• " + title for title in names)
+            if count > len(names):
+                prompt += f"\n另有 {count - len(names)} 个子事项"
+        if messagebox.askyesno(f"删除{kind}", prompt,
+                               parent=self.root, default="no"):
             try:
                 self.store.delete_task(task.id)
             except STORAGE_ERRORS as exc:
