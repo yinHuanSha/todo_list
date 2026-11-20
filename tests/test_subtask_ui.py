@@ -38,6 +38,19 @@ class SubtaskViewTests(unittest.TestCase):
         self.assertIn("1/2", tree.item(group_id, "text"))
         self.assertCountEqual(tree.get_children(group_id), (str(self.report.id), str(self.cover.id)))
 
+    def test_collapsed_group_shows_highest_remaining_child_score(self):
+        tree = self.app.tree
+        group_id = str(self.group.id)
+        tree.item(group_id, open=False)
+        self.assertEqual(tree.set(group_id, "score"), "6/10")
+        self.app.hero_action()
+        self.assertEqual(tree.set(group_id, "score"), "0/10")
+        self.assertEqual(tree.set(str(self.meeting.id), "score"), "5/10")
+        self.assertFalse(tree.item(group_id, "open"))
+        self.store.set_done(self.report.id, False)
+        self.app.refresh()
+        self.assertEqual(tree.set(group_id, "score"), "6/10")
+
     def test_restore_one_child_from_a_completed_group(self):
         self.store.set_done(self.report.id, True)
         self.store.set_done(self.cover.id, True)

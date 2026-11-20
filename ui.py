@@ -422,19 +422,20 @@ class TodoApp:
         rows = []
         positions = {task.id: index for index, task in enumerate(pending)}
         for root_id in (done_roots if self.show_done else pending_roots):
-            rows.append(self.make_row(self.tasks_by_id[root_id], now))
             children = sorted(self.children.get(root_id, ()),
                               key=lambda child: (child.done, positions.get(child.id, child.id)))
+            root_task = self.tasks_by_id[root_id]
+            rows.append(self.make_row(root_task, now, score_source=children[0] if children else root_task))
             rows.extend(self.make_row(child, now) for child in children)
         self.display_rows(rows)
         self.update_actions()
 
-    def make_row(self, task, now):
+    def make_row(self, task, now, *, score_source=None):
         children = self.children.get(task.id)
         title = task.title
         due = task.due_at.isoformat(" ", timespec="minutes") if task.due_at else "—"
         urgent = URGENCY_LABELS[urgency(task.due_at, now)]
-        points = f"{score(task, now)}/10" if not task.done and not children else "—"
+        points = "—" if task.done else f"{score(score_source or task, now)}/10"
         tag = ""
         if children:
             title += f"\n已完成 {sum(child.done for child in children)}/{len(children)}"
