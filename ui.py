@@ -425,17 +425,19 @@ class TodoApp:
             children = sorted(self.children.get(root_id, ()),
                               key=lambda child: (child.done, positions.get(child.id, child.id)))
             root_task = self.tasks_by_id[root_id]
-            rows.append(self.make_row(root_task, now, score_source=children[0] if children else root_task))
+            rows.append(self.make_row(root_task, now, priority_source=children[0] if children else root_task))
             rows.extend(self.make_row(child, now) for child in children)
         self.display_rows(rows)
         self.update_actions()
 
-    def make_row(self, task, now, *, score_source=None):
+    def make_row(self, task, now, *, priority_source=None):
         children = self.children.get(task.id)
+        # 子事项共用截止时间，排在最前的待办子事项也具有最高的重要程度。
+        priority_source = priority_source or task
         title = task.title
         due = task.due_at.isoformat(" ", timespec="minutes") if task.due_at else "—"
         urgent = URGENCY_LABELS[urgency(task.due_at, now)]
-        points = "—" if task.done else f"{score(score_source or task, now)}/10"
+        points = "—" if task.done else f"{score(priority_source, now)}/10"
         tag = ""
         if children:
             title += f"\n已完成 {sum(child.done for child in children)}/{len(children)}"
@@ -448,7 +450,7 @@ class TodoApp:
             due += "\n" + time_description(task.due_at, now)
             if not children:
                 tag = "overdue"
-        importance = "—" if children else IMPORTANCE_LABELS[task.importance]
+        importance = "—" if children and task.done else IMPORTANCE_LABELS[priority_source.importance]
         return task, title, (importance, urgent, due, points), tag
 
     def update_recommendation(self, now):
